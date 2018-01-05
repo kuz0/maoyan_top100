@@ -1,9 +1,9 @@
 import re
 import json
 import requests
-from pprint import pprint
-from multiprocessing import Pool
 from requests.exceptions import RequestException
+from multiprocessing import Pool
+from pprint import pprint
 
 
 def get_one_page(url):
@@ -49,3 +49,5 @@ def main(offset):
 if __name__ == '__main__':
     pool = Pool()
     pool.map(main, [i * 10 for i in range(10)])
+    pool.close()
+    pool.join()
