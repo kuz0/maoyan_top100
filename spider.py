@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 
 import os
-import pymongo
 import requests
+from pymongo import MongoClient
 from pyquery import PyQuery as pq
 from multiprocessing import Pool
 from config import *
 
-client = pymongo.MongoClient(MONGO_URI, connect=False)
+client = MongoClient(MONGO_URI, connect=False)
 db = client[MONGO_DB]
 
 
 def get_one_page(url):
     try:
         response = requests.get(url)
-        if response.status_code == 200:
+        if response.status_code == requests.codes.ok:
             return response.text
         return None
     except Exception as e:
@@ -37,17 +37,17 @@ def parse_one_page(response):
 
 def save_to_mongodb(result):
     try:
-        if db[MONGO_TABLE].update({'name': result['name']}, result, True):
-            print('Successfully Saved!', result)
+        if db[MONGO_TABLE].update({'name': result['name']}, result, upsert=True):
+            print('Successfully Saved!', result['name'])
     except Exception as e:
         print(e)
 
 
 def download_image(url, index, name):
-    print('Downloading', url)
+    print('Downloading...', url)
     try:
         response = requests.get(url)
-        if response.status_code == 200:
+        if response.status_code == requests.codes.ok:
             save_image(response.content, index, name)
         return None
     except Exception as e:
@@ -55,9 +55,9 @@ def download_image(url, index, name):
 
 
 def save_image(content, index, name):
-    file_path = '{0}/{1}-{2}.{3}'.format(os.getcwd(), index, name, 'jpg')
-    print(file_path)
+    file_path = '{0}/{1}-{2}.jpg'.format(os.getcwd(), index, name)
     if not os.path.exists(file_path):
+        print(file_path)
         with open(file_path, 'wb') as f:
             f.write(content)
             f.close()
@@ -69,7 +69,7 @@ def main(offset):
     items = parse_one_page(html)
     for item in items:
         save_to_mongodb(item)
-        download_image(item['image'],item['index'], item['name'])
+        download_image(item['image'], item['index'], item['name'])
 
 
 if __name__ == '__main__':
