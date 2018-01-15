@@ -1,9 +1,14 @@
-import re
-import json
+# -*- coding: utf-8 -*-
+
+import os
+import pymongo
 import requests
-from requests.exceptions import RequestException
+from pyquery import PyQuery as pq
 from multiprocessing import Pool
-from pprint import pprint
+from config import *
+
+client = pymongo.MongoClient(MONGO_URI, connect=False)
+db = client[MONGO_DB]
 
 
 def get_one_page(url):
@@ -12,38 +17,59 @@ def get_one_page(url):
         if response.status_code == 200:
             return response.text
         return None
-    except RequestException:
+    except Exception as e:
+        print(e)
+
+
+def parse_one_page(response):
+    doc = pq(response)
+    dd_list = doc('.board-wrapper > dd').items()
+    result = dict()
+    for dd in dd_list:
+        result['name'] = dd('p.name > a').text()
+        result['index'] = dd('i.board-index').text()
+        result['image'] = dd('img.board-img').attr('data-src')
+        result['actor'] = dd('p.star').text().replace('主演：', '')
+        result['time'] = dd('p.releasetime').text().replace('上映时间：', '')
+        result['score'] = dd('p.score').text().replace(' ', '')
+        yield result
+
+
+def save_to_mongodb(result):
+    try:
+        if db[MONGO_TABLE].update({'name': result['name']}, result, True):
+            print('Successfully Saved!', result)
+    except Exception as e:
+        print(e)
+
+
+def download_image(url, index, name):
+    print('Downloading', url)
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            save_image(response.content, index, name)
         return None
+    except Exception as e:
+        print(e)
 
 
-def parse_one_page(html):
-    pattern = re.compile('<dd>.*?board-index.*?>(\d+)</i>.*?data-src="(.*?)".*?name"><a'
-                         '.*?>(.*?)</a>.*?star">(.*?)</p>.*?releasetime">(.*?)</p>'
-                         '.*?integer">(.*?)</i>.*?fraction">(.*?)</i>.*?</dd>', re.S)
-    items = re.findall(pattern, html)
-    for item in items:
-        yield {
-            'index': item[0],
-            'image': item[1],
-            'title': item[2],
-            'actor': item[3].strip()[3:],
-            'time': item[4].strip()[5:],
-            'score': item[5] + item[6]
-        }
-
-
-def write_to_file(content):
-    with open('result.txt', 'a', encoding='utf-8') as f:
-        f.write(json.dumps(content, ensure_ascii=False) + '\n')
-        f.close()
+def save_image(content, index, name):
+    file_path = '{0}/{1}-{2}.{3}'.format(os.getcwd(), index, name, 'jpg')
+    print(file_path)
+    if not os.path.exists(file_path):
+        with open(file_path, 'wb') as f:
+            f.write(content)
+            f.close()
 
 
 def main(offset):
     url = 'http://maoyan.com/board/4?offset=' + str(offset)
     html = get_one_page(url)
-    for item in parse_one_page(html):
-        pprint(item)
-        write_to_file(item)
+    items = parse_one_page(html)
+    for item in items:
+        save_to_mongodb(item)
+        download_image(item['image'],item['index'], item['name'])
 
 
 if __name__ == '__main__':
